@@ -1,0 +1,10 @@
+{
+  "name": "job-agent",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm start",
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "start": "cd server && npm start"
+  }
+}
