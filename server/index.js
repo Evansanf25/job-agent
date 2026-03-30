@@ -4,7 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const { pool, initDb } = require('./db');
-const { analyzeJD, draftCoverLetter, searchJobs } = require('./claude');
+const { analyzeJD, draftCoverLetter, scoreJobsAgainstResume } = require('./claude');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,6 +20,14 @@ app.use(express.static(buildPath));
 async function getResume() {
   const { rows } = await pool.query('SELECT text FROM resume ORDER BY uploaded_at DESC LIMIT 1');
   return rows.length ? rows[0].text : null;
+}
+
+// Helper: format salary range from JSearch response
+function formatSalary(j) {
+  if (!j.job_min_salary && !j.job_max_salary) return null;
+  const fmt = n => n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`;
+  if (j.job_min_salary && j.job_max_salary) return `${fmt(j.job_min_salary)}–${fmt(j.job_max_salary)}`;
+  return j.job_min_salary ? `${fmt(j.job_min_salary)}+` : null;
 }
 
 // Health check
@@ -71,12 +79,61 @@ app.get('/api/resume', async (req, res) => {
   }
 });
 
-// Search jobs (generates realistic listings)
+// Search real jobs via JSearch (aggregates LinkedIn, Indeed, Glassdoor, Google Jobs)
 app.post('/api/search', async (req, res) => {
   try {
     const { query, location, level } = req.body;
+    if (!query) return res.status(400).json({ error: 'query is required' });
+
+    // Build search string
+    let q = query;
+    if (level) q += ` ${level}`;
+    if (location) q += ` in ${location}`;
+
+    const url = new URL('https://jsearch.p.rapidapi.com/search');
+    url.searchParams.set('query', q);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('num_pages', '1');
+
+    const jsRes = await fetch(url.toString(), {
+      headers: {
+        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
+      },
+    });
+
+    const jsData = await jsRes.json();
+
+    if (!jsData.data?.length) {
+      return res.json({ jobs: [], message: 'No results found. Try a different search.' });
+    }
+
+    // Map JSearch fields to our app format
+    const jobs = jsData.data.map(j => ({
+      title: j.job_title,
+      company: j.employer_name,
+      location: [j.job_city, j.job_state || j.job_country].filter(Boolean).join(', ')
+        || (j.job_is_remote ? 'Remote' : 'Location not specified'),
+      salary: formatSalary(j),
+      url: j.job_apply_link,
+      score: null,
+      fit_reason: '',
+      tags: [j.job_employment_type, j.job_is_remote ? 'Remote' : null].filter(Boolean),
+      description: (j.job_description || '').slice(0, 500),
+    }));
+
+    // If resume is uploaded, score all results in one Claude call
     const resumeText = await getResume();
-    const jobs = await searchJobs(query, location, level, resumeText);
+    if (resumeText) {
+      try {
+        const scored = await scoreJobsAgainstResume(jobs, resumeText);
+        return res.json({ jobs: scored });
+      } catch (scoreErr) {
+        console.error('Scoring failed, returning unscored results:', scoreErr);
+        return res.json({ jobs });
+      }
+    }
+
     res.json({ jobs });
   } catch (err) {
     console.error(err);
