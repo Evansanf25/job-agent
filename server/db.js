@@ -27,6 +27,14 @@ async function initDb() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resume (
+      id SERIAL PRIMARY KEY,
+      text TEXT NOT NULL,
+      filename TEXT,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
   console.log('Database initialized');
 }
 
