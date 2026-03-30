@@ -68,27 +68,37 @@ Requirements:
   return message.content[0].text;
 }
 
-async function searchJobs(query, location, level, resumeText) {
+// Score a list of real job listings against the candidate's resume in a single Claude call
+async function scoreJobsAgainstResume(jobs, resumeText) {
   const resume = resumeText || DEFAULT_RESUME;
+  const jobList = jobs.slice(0, 10).map((j, i) =>
+    `${i + 1}. ${j.title} at ${j.company} (${j.location})\n${(j.description || '').slice(0, 400)}`
+  ).join('\n\n---\n\n');
+
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2048,
+    max_tokens: 1500,
     system: 'Return only valid JSON arrays, no markdown, no backticks.',
     messages: [{
       role: 'user',
-      content: `Generate 5 realistic job listings for: "${query}"${location ? ' in ' + location : ''}${level ? ' (' + level + ' level)' : ''}.
+      content: `Score each job listing's fit for this candidate (0-100) and give a 1-2 sentence fit reason. Return ONLY a JSON array with exactly ${Math.min(jobs.length, 10)} objects:
+[{"score": 85, "fit_reason": "short reason"}, ...]
 
-Candidate: ${resume}
+Candidate:
+${resume.slice(0, 2000)}
 
-Return ONLY a JSON array:
-[{"title":"...","company":"...","location":"...","salary":"$X–$Y","url":"https://www.linkedin.com/jobs/","score":85,"fit_reason":"2-3 sentences on fit","tags":["tag1","tag2","tag3"]}]
-
-Score 0–100 based on fit. Make companies realistic for the candidate's field. Vary scores authentically.`
+Jobs:
+${jobList}`
     }]
   });
 
   const raw = message.content[0].text.replace(/```json|```/g, '').trim();
-  return JSON.parse(raw);
+  const scores = JSON.parse(raw);
+  return jobs.map((j, i) => ({
+    ...j,
+    score: scores[i]?.score ?? null,
+    fit_reason: scores[i]?.fit_reason || '',
+  }));
 }
 
-module.exports = { analyzeJD, draftCoverLetter, searchJobs };
+module.exports = { analyzeJD, draftCoverLetter, scoreJobsAgainstResume };
