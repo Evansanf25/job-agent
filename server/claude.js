@@ -2,11 +2,12 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const RESUME = `Evan Sanford — Finance and Proposal Structure Associate at Redaptive (energy efficiency project finance, mid-2024–present). Background: transaction advisory at Alvarez & Marsal, MBA in Sustainable Innovation from UVM. CFA Level II passed, pursuing Level III. Skills: tax equity structuring (ITC/PTC, T-flip, partnership flip, IRA transferability), commercial solar and energy efficiency project finance, deal structuring, financial modeling, credit analysis, proposal structuring. Previous: Long-Term Stock Exchange. Targeting: senior structured finance roles in renewable energy, Denver CO or Chicago IL.`;
+const DEFAULT_RESUME = 'No resume uploaded yet. Please upload your resume for personalized results.';
 
-async function analyzeJD(jdText) {
+async function analyzeJD(jdText, resumeText) {
+  const resume = resumeText || DEFAULT_RESUME;
   const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-hcaiku-4-5-20251001',
     max_tokens: 1024,
     system: 'Return only valid JSON, no markdown, no backticks. Be specific and honest about gaps.',
     messages: [{
@@ -25,7 +26,7 @@ async function analyzeJD(jdText) {
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"]
 }
 
-Candidate: ${RESUME}
+Candidate: ${resume}
 
 Job description:
 ${jdText.slice(0, 3000)}`
@@ -36,19 +37,20 @@ ${jdText.slice(0, 3000)}`
   return JSON.parse(raw);
 }
 
-async function draftCoverLetter(job, analysis) {
+async function draftCoverLetter(job, analysis, resumeText) {
+  const resume = resumeText || DEFAULT_RESUME;
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
-    system: 'You are a professional cover letter writer. Write in a direct, confident, human-sounding tone. No AI-sounding filler phrases.',
+    system: 'You are a professional cover letter writer. Write in a direct, confident, human tone. No AI-sounding filler phrases.',
     messages: [{
       role: 'user',
       content: `Write a cover letter for this candidate applying to this role.
 
-Candidate: ${RESUME}
+Candidate: ${resume}
 Role: ${job.title} at ${job.company} (${job.location || 'location TBD'})
-Key strengths to highlight: ${(analysis.strengths || []).join(', ')}
-Gaps to acknowledge or work around: ${(analysis.gaps || []).join(', ')}
+Key strengths to highlight: ${(lanalysis.strengths || []).join(', ')}
+Gaps to acknowledge or work around: ${(lanalysis.gaps || []).join(', ')}
 Keywords to incorporate: ${(analysis.keywords || []).join(', ')}
 
 Requirements:
@@ -66,21 +68,22 @@ Requirements:
   return message.content[0].text;
 }
 
-async function searchJobs(query, location, level) {
+async function searchJobs(query, location, level, resumeText) {
+  const resume = resumeText || DEFAULT_RESUME;
   const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-ha-iku-4-5-20251001',
     max_tokens: 2048,
     system: 'Return only valid JSON arrays, no markdown, no backticks.',
     messages: [{
       role: 'user',
       content: `Generate 5 realistic job listings for: "${query}"${location ? ' in ' + location : ''}${level ? ' (' + level + ' level)' : ''}.
 
-Candidate: ${RESUME}
+Candidate: ${resume}
 
 Return ONLY a JSON array:
-[{"title":"...","company":"...","location":"...","salary":"$X–$Y","url":"https://www.linkedin.com/jobs/","score":85,"fit_reason":"2-3 sentences on fit","tags":["tag1","tag2","tag3"]}]
+[{"title":"...","company":"...","location":"...","salary":"$X-$Y","url":"https://www.linkedin.com/jobs/","score":85,"fit_reason":"2-3 sentences on fit","tags":["tag1","tag2","tag3"]}]
 
-Score 0–100 based on fit. Make companies realistic for clean energy finance. Vary scores authentically.`
+Score 0-100 based on fit. Make companies realistic for the candidate's field. Vary scores authentically.`
     }]
   });
 
