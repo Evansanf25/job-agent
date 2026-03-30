@@ -7,7 +7,7 @@ const DEFAULT_RESUME = 'No resume uploaded yet. Please upload your resume for pe
 async function analyzeJD(jdText, resumeText) {
   const resume = resumeText || DEFAULT_RESUME;
   const message = await client.messages.create({
-    model: 'claude-hcaiku-4-5-20251001',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
     system: 'Return only valid JSON, no markdown, no backticks. Be specific and honest about gaps.',
     messages: [{
@@ -49,8 +49,8 @@ async function draftCoverLetter(job, analysis, resumeText) {
 
 Candidate: ${resume}
 Role: ${job.title} at ${job.company} (${job.location || 'location TBD'})
-Key strengths to highlight: ${(lanalysis.strengths || []).join(', ')}
-Gaps to acknowledge or work around: ${(lanalysis.gaps || []).join(', ')}
+Key strengths to highlight: ${(analysis.strengths || []).join(', ')}
+Gaps to acknowledge or work around: ${(analysis.gaps || []).join(', ')}
 Keywords to incorporate: ${(analysis.keywords || []).join(', ')}
 
 Requirements:
@@ -71,7 +71,7 @@ Requirements:
 async function searchJobs(query, location, level, resumeText) {
   const resume = resumeText || DEFAULT_RESUME;
   const message = await client.messages.create({
-    model: 'claude-ha-iku-4-5-20251001',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
     system: 'Return only valid JSON arrays, no markdown, no backticks.',
     messages: [{
@@ -81,9 +81,9 @@ async function searchJobs(query, location, level, resumeText) {
 Candidate: ${resume}
 
 Return ONLY a JSON array:
-[{"title":"...","company":"...","location":"...","salary":"$X-$Y","url":"https://www.linkedin.com/jobs/","score":85,"fit_reason":"2-3 sentences on fit","tags":["tag1","tag2","tag3"]}]
+[{"title":"...","company":"...","location":"...","salary":"$X–$Y","url":"https://www.linkedin.com/jobs/","score":85,"fit_reason":"2-3 sentences on fit","tags":["tag1","tag2","tag3"]}]
 
-Score 0-100 based on fit. Make companies realistic for the candidate's field. Vary scores authentically.`
+Score 0–100 based on fit. Make companies realistic for the candidate's field. Vary scores authentically.`
     }]
   });
 
