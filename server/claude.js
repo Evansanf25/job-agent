@@ -71,17 +71,18 @@ Requirements:
 // Score a list of real job listings against the candidate's resume in a single Claude call
 async function scoreJobsAgainstResume(jobs, resumeText) {
   const resume = resumeText || DEFAULT_RESUME;
-  const jobList = jobs.slice(0, 10).map((j, i) =>
+  const cap = Math.min(jobs.length, 20);
+  const jobList = jobs.slice(0, cap).map((j, i) =>
     `${i + 1}. ${j.title} at ${j.company} (${j.location})\n${(j.description || '').slice(0, 400)}`
   ).join('\n\n---\n\n');
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
+    max_tokens: 2000,
     system: 'Return only valid JSON arrays, no markdown, no backticks.',
     messages: [{
       role: 'user',
-      content: `Score each job listing's fit for this candidate (0-100) and give a 1-2 sentence fit reason. Return ONLY a JSON array with exactly ${Math.min(jobs.length, 10)} objects:
+      content: `Score each job listing's fit for this candidate (0-100) and give a 1-2 sentence fit reason. Return ONLY a JSON array with exactly ${cap} objects:
 [{"score": 85, "fit_reason": "short reason"}, ...]
 
 Candidate:
@@ -101,4 +102,25 @@ ${jobList}`
   }));
 }
 
-module.exports = { analyzeJD, draftCoverLetter, scoreJobsAgainstResume };
+// Derive job search queries from a resume — used by smart-search
+async function extractSearchQueries(resumeText) {
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    system: 'Return only valid JSON, no markdown, no backticks.',
+    messages: [{
+      role: 'user',
+      content: `Based on this resume, generate 4 specific job search queries that would surface the best-fit open roles for this candidate. Vary the seniority and framing slightly across queries. Return ONLY a JSON array of strings:
+
+["query 1", "query 2", "query 3", "query 4"]
+
+Resume:
+${resumeText.slice(0, 2000)}`
+    }]
+  });
+
+  const raw = message.content[0].text.replace(/```json|```/g, '').trim();
+  return JSON.parse(raw);
+}
+
+module.exports = { analyzeJD, draftCoverLetter, scoreJobsAgainstResume, extractSearchQueries };

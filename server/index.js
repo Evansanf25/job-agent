@@ -4,7 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const { pool, initDb } = require('./db');
-const { analyzeJD, draftCoverLetter, scoreJobsAgainstResume } = require('./claude');
+const { analyzeJD, draftCoverLetter, scoreJobsAgainstResume, extractSearchQueries } = require('./claude');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -138,6 +138,80 @@ app.post('/api/search', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// Smart search: resume-driven, no query needed
+app.post('/api/smart-search', async (req, res) => {
+  try {
+    const resumeText = await getResume();
+    if (!resumeText) {
+      return res.status(400).json({ error: 'No resume found. Please upload your resume first.' });
+    }
+
+    // Step 1: Claude reads the resume and produces search queries
+    const queries = await extractSearchQueries(resumeText);
+
+    // Step 2: Run each query against JSearch in parallel, collect all results
+    const seen = new Set();
+    const allJobs = [];
+
+    await Promise.all(queries.map(async (q) => {
+      try {
+        const url = new URL('https://jsearch.p.rapidapi.com/search');
+        url.searchParams.set('query', q);
+        url.searchParams.set('page', '1');
+        url.searchParams.set('num_pages', '1');
+
+        const jsRes = await fetch(url.toString(), {
+          headers: {
+            'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+            'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
+          },
+        });
+        const jsData = await jsRes.json();
+
+        for (const j of (jsData.data || [])) {
+          if (!seen.has(j.job_id)) {
+            seen.add(j.job_id);
+            allJobs.push({
+              title: j.job_title,
+              company: j.employer_name,
+              location: [j.job_city, j.job_state || j.job_country].filter(Boolean).join(', ')
+                || (j.job_is_remote ? 'Remote' : 'Location not specified'),
+              salary: formatSalary(j),
+              url: j.job_apply_link,
+              score: null,
+              fit_reason: '',
+              tags: [j.job_employment_type, j.job_is_remote ? 'Remote' : null].filter(Boolean),
+              description: (j.job_description || '').slice(0, 500),
+            });
+          }
+        }
+      } catch (e) {
+        console.error(`Smart search query "${q}" failed:`, e.message);
+      }
+    }));
+
+    if (!allJobs.length) {
+      return res.json({ jobs: [], queries, message: 'No results found across all searches.' });
+    }
+
+    // Step 3: Score everything against the resume in one Claude call
+    const scored = await scoreJobsAgainstResume(allJobs, resumeText);
+
+    // Step 4: Sort by score descending
+    scored.sort((a, b) => {
+      if (a.score === null && b.score === null) return 0;
+      if (a.score === null) return 1;
+      if (b.score === null) return -1;
+      return b.score - a.score;
+    });
+
+    res.json({ jobs: scored, queries });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Smart search failed' });
   }
 });
 

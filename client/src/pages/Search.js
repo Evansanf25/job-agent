@@ -5,15 +5,17 @@ export default function Search({ api, onSave }) {
   const [location, setLocation] = useState('');
   const [level, setLevel] = useState('');
   const [loading, setLoading] = useState(false);
+  const [smartLoading, setSmartLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [drafting, setDrafting] = useState({});
   const [letters, setLetters] = useState({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [smartQueries, setSmartQueries] = useState([]);
 
   async function handleSearch() {
     if (!query.trim()) return;
-    setLoading(true); setError(''); setJobs([]); setMessage('');
+    setLoading(true); setError(''); setJobs([]); setMessage(''); setSmartQueries([]);
     try {
       const res = await fetch(`${api}/api/search`, {
         method: 'POST',
@@ -22,7 +24,6 @@ export default function Search({ api, onSave }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
-      // Sort: scored jobs first (by score desc), then unscored
       const sorted = (data.jobs || []).sort((a, b) => {
         if (a.score === null && b.score === null) return 0;
         if (a.score === null) return 1;
@@ -35,6 +36,24 @@ export default function Search({ api, onSave }) {
       setError(e.message || 'Search failed. Is the server running?');
     }
     setLoading(false);
+  }
+
+  async function handleSmartSearch() {
+    setSmartLoading(true); setError(''); setJobs([]); setMessage(''); setSmartQueries([]);
+    try {
+      const res = await fetch(`${api}/api/smart-search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Smart search failed');
+      setJobs(data.jobs || []);
+      setSmartQueries(data.queries || []);
+      if (data.message) setMessage(data.message);
+    } catch (e) {
+      setError(e.message || 'Smart search failed. Make sure your resume is uploaded.');
+    }
+    setSmartLoading(false);
   }
 
   async function handleDraft(job, idx) {
@@ -82,11 +101,50 @@ export default function Search({ api, onSave }) {
     return s >= 80 ? 'Strong fit' : s >= 60 ? 'Good fit' : 'Partial fit';
   }
 
+  const isLoading = loading || smartLoading;
+
   return (
     <div>
       <h1 className="page-title">Job search</h1>
       <p className="page-subtitle">Real listings from LinkedIn, Indeed, Glassdoor &amp; Google Jobs — scored against your resume</p>
 
+      {/* Smart search banner */}
+      <div style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '14px 16px',
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10,
+      }}>
+        <div>
+          <div style={{ fontWeight: 500, fontSize: 14 }}>Smart search</div>
+          <div style={{ color: 'var(--muted)', fontSize: 13, marginTop: 2 }}>
+            Reads your resume, searches automatically, returns the best-matched roles — no typing needed
+          </div>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={handleSmartSearch}
+          disabled={isLoading}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {smartLoading ? <><span className="spinner" />&nbsp;Finding matches...</> : 'Find my best matches'}
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, color: 'var(--muted)', fontSize: 13 }}>
+        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        <span>or search manually</span>
+        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+      </div>
+
+      {/* Manual search */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <input
           value={query}
@@ -111,7 +169,7 @@ export default function Search({ api, onSave }) {
           <option>VP</option>
           <option>Managing Director</option>
         </select>
-        <button className="btn btn-primary" onClick={handleSearch} disabled={loading || !query.trim()}>
+        <button className="btn btn-primary" onClick={handleSearch} disabled={isLoading || !query.trim()}>
           {loading ? <span className="spinner" /> : 'Search'}
         </button>
       </div>
@@ -119,15 +177,28 @@ export default function Search({ api, onSave }) {
       {error && <p style={{ color: 'var(--red)', fontSize: 14, marginBottom: 12 }}>{error}</p>}
       {message && <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 12 }}>{message}</p>}
 
-      {loading && (
-        <div className="empty">
-          <span className="spinner" style={{ width: 20, height: 20 }} />
-          <p style={{ marginTop: 12 }}>Searching real job boards{jobs.length === 0 ? '...' : ' and scoring against your resume...'}</p>
+      {/* Show what queries smart search used */}
+      {smartQueries.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+          Searched:&nbsp;{smartQueries.map((q, i) => (
+            <span key={i} className="pill" style={{ marginRight: 4 }}>{q}</span>
+          ))}
         </div>
       )}
 
-      {!loading && jobs.length === 0 && !error && (
-        <div className="empty">Enter a job title or keywords to search real postings</div>
+      {isLoading && (
+        <div className="empty">
+          <span className="spinner" style={{ width: 20, height: 20 }} />
+          <p style={{ marginTop: 12 }}>
+            {smartLoading
+              ? 'Reading your resume, generating searches, and finding the best matches...'
+              : 'Searching real job boards and scoring against your resume...'}
+          </p>
+        </div>
+      )}
+
+      {!isLoading && jobs.length === 0 && !error && (
+        <div className="empty">Use smart search to find your best matches, or enter a job title above</div>
       )}
 
       {jobs.map((job, i) => (
