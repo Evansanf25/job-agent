@@ -40,6 +40,36 @@ function filterBySalary(jobs, minSalary) {
   });
 }
 
+// Apply all post-fetch filters (work type, locations)
+function applyFilters(jobs, { workType, includeLocations, excludeLocations }) {
+  let result = jobs;
+
+  if (workType === 'remote') {
+    result = result.filter(j => j._isRemote === true);
+  } else if (workType === 'onsite') {
+    result = result.filter(j => j._isRemote !== true);
+  }
+
+  if (excludeLocations) {
+    const terms = excludeLocations.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    result = result.filter(j => {
+      const loc = (j.location || '').toLowerCase();
+      return !terms.some(t => loc.includes(t));
+    });
+  }
+
+  if (includeLocations) {
+    const terms = includeLocations.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    result = result.filter(j => {
+      if (j._isRemote) return true; // remote jobs always pass through
+      const loc = (j.location || '').toLowerCase();
+      return terms.some(t => loc.includes(t));
+    });
+  }
+
+  return result;
+}
+
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -92,7 +122,7 @@ app.get('/api/resume', async (req, res) => {
 // Search real jobs via JSearch (aggregates LinkedIn, Indeed, Glassdoor, Google Jobs)
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, location, level, minSalary } = req.body;
+    const { query, location, level, minSalary, workType, datePosted, includeLocations, excludeLocations } = req.body;
     if (!query) return res.status(400).json({ error: 'query is required' });
 
     // Build search string
@@ -104,6 +134,7 @@ app.post('/api/search', async (req, res) => {
     url.searchParams.set('query', q);
     url.searchParams.set('page', '1');
     url.searchParams.set('num_pages', '1');
+    url.searchParams.set('date_posted', datePosted || 'month');
 
     const jsRes = await fetch(url.toString(), {
       headers: {
@@ -126,6 +157,7 @@ app.post('/api/search', async (req, res) => {
         || (j.job_is_remote ? 'Remote' : 'Location not specified'),
       salary: formatSalary(j),
       _minSalaryRaw: j.job_min_salary || null,
+      _isRemote: j.job_is_remote || false,
       url: j.job_apply_link,
       score: null,
       fit_reason: '',
@@ -133,7 +165,8 @@ app.post('/api/search', async (req, res) => {
       description: (j.job_description || '').slice(0, 500),
     }));
 
-    const jobs = filterBySalary(rawJobs, minSalary).map(({ _minSalaryRaw, ...j }) => j);
+    const jobs = applyFilters(filterBySalary(rawJobs, minSalary), { workType, includeLocations, excludeLocations })
+      .map(({ _minSalaryRaw, _isRemote, ...j }) => j);
 
     // If resume is uploaded, score all results in one Claude call
     const resumeText = await getResume();
@@ -157,7 +190,7 @@ app.post('/api/search', async (req, res) => {
 // Smart search: resume-driven, no query needed
 app.post('/api/smart-search', async (req, res) => {
   try {
-    const { minSalary } = req.body;
+    const { minSalary, workType, datePosted, includeLocations, excludeLocations } = req.body;
     const resumeText = await getResume();
     if (!resumeText) {
       return res.status(400).json({ error: 'No resume found. Please upload your resume first.' });
@@ -176,7 +209,7 @@ app.post('/api/smart-search', async (req, res) => {
         url.searchParams.set('query', q);
         url.searchParams.set('page', '1');
         url.searchParams.set('num_pages', '2');
-        url.searchParams.set('date_posted', 'month');
+        url.searchParams.set('date_posted', datePosted || 'month');
 
         const jsRes = await fetch(url.toString(), {
           headers: {
@@ -198,6 +231,7 @@ app.post('/api/smart-search', async (req, res) => {
                 || (j.job_is_remote ? 'Remote' : 'Location not specified'),
               salary: formatSalary(j),
               _minSalaryRaw: j.job_min_salary || null,
+              _isRemote: j.job_is_remote || false,
               url: j.job_apply_link,
               score: null,
               fit_reason: '',
@@ -213,9 +247,10 @@ app.post('/api/smart-search', async (req, res) => {
 
     console.log(`Smart search total unique jobs before scoring: ${allJobs.length}`);
 
-    // Apply salary filter (jobs with no salary data pass through)
-    const filtered = filterBySalary(allJobs, minSalary).map(({ _minSalaryRaw, ...j }) => j);
-    console.log(`Smart search after salary filter: ${filtered.length}`);
+    // Apply all filters (salary, work type, locations)
+    const filtered = applyFilters(filterBySalary(allJobs, minSalary), { workType, includeLocations, excludeLocations })
+      .map(({ _minSalaryRaw, _isRemote, ...j }) => j);
+    console.log(`Smart search after filters: ${filtered.length}`);
 
     if (!filtered.length) {
       return res.json({ jobs: [], queries, message: 'No results matched your salary filter. Try lowering the minimum or selecting "Any salary".' });

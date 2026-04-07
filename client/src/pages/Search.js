@@ -4,7 +4,12 @@ export default function Search({ api, onSave }) {
   const [query, setQuery] = useState('');
   const [location, setLocation] = useState('');
   const [level, setLevel] = useState('');
+  // Shared filters
   const [minSalary, setMinSalary] = useState('');
+  const [workType, setWorkType] = useState('');
+  const [datePosted, setDatePosted] = useState('month');
+  const [includeLocations, setIncludeLocations] = useState('');
+  const [excludeLocations, setExcludeLocations] = useState('');
   const [loading, setLoading] = useState(false);
   const [smartLoading, setSmartLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -14,6 +19,14 @@ export default function Search({ api, onSave }) {
   const [message, setMessage] = useState('');
   const [smartQueries, setSmartQueries] = useState([]);
 
+  const filters = {
+    minSalary: minSalary ? Number(minSalary) : null,
+    workType: workType || null,
+    datePosted: datePosted || 'month',
+    includeLocations: includeLocations.trim() || null,
+    excludeLocations: excludeLocations.trim() || null,
+  };
+
   async function handleSearch() {
     if (!query.trim()) return;
     setLoading(true); setError(''); setJobs([]); setMessage(''); setSmartQueries([]);
@@ -21,7 +34,7 @@ export default function Search({ api, onSave }) {
       const res = await fetch(`${api}/api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, location, level, minSalary: minSalary ? Number(minSalary) : null }),
+        body: JSON.stringify({ query, location, level, ...filters }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
@@ -45,7 +58,7 @@ export default function Search({ api, onSave }) {
       const res = await fetch(`${api}/api/smart-search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minSalary: minSalary ? Number(minSalary) : null }),
+        body: JSON.stringify(filters),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Smart search failed');
@@ -129,7 +142,26 @@ export default function Search({ api, onSave }) {
             Reads your resume, searches automatically, returns the best-matched roles — no typing needed
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSmartSearch}
+          disabled={isLoading}
+          style={{ whiteSpace: 'nowrap' }}
+        >
+          {smartLoading ? <><span className="spinner" />&nbsp;Finding matches...</> : 'Find my best matches'}
+        </button>
+      </div>
+
+      {/* Shared filters panel */}
+      <div style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        padding: '12px 16px',
+        marginBottom: 16,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filters</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
           <select value={minSalary} onChange={e => setMinSalary(e.target.value)} style={{ width: 130 }}>
             <option value="">Any salary</option>
             <option value="60000">$60k+</option>
@@ -138,14 +170,31 @@ export default function Search({ api, onSave }) {
             <option value="120000">$120k+</option>
             <option value="150000">$150k+</option>
           </select>
-          <button
-            className="btn btn-primary"
-            onClick={handleSmartSearch}
-            disabled={isLoading}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            {smartLoading ? <><span className="spinner" />&nbsp;Finding matches...</> : 'Find my best matches'}
-          </button>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 130 }}>
+            <option value="">Any work type</option>
+            <option value="remote">Remote only</option>
+            <option value="onsite">On-site only</option>
+          </select>
+          <select value={datePosted} onChange={e => setDatePosted(e.target.value)} style={{ width: 140 }}>
+            <option value="all">Any time</option>
+            <option value="month">Past month</option>
+            <option value="week">Past week</option>
+            <option value="today">Past 24 hours</option>
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            value={includeLocations}
+            onChange={e => setIncludeLocations(e.target.value)}
+            placeholder="Include locations (e.g. New York, Boston)"
+            style={{ flex: 1, minWidth: 200 }}
+          />
+          <input
+            value={excludeLocations}
+            onChange={e => setExcludeLocations(e.target.value)}
+            placeholder="Exclude locations (e.g. San Francisco, NC)"
+            style={{ flex: 1, minWidth: 200 }}
+          />
         </div>
       </div>
 
@@ -180,14 +229,6 @@ export default function Search({ api, onSave }) {
           <option>Director</option>
           <option>VP</option>
           <option>Managing Director</option>
-        </select>
-        <select value={minSalary} onChange={e => setMinSalary(e.target.value)} style={{ width: 130 }}>
-          <option value="">Any salary</option>
-          <option value="60000">$60k+</option>
-          <option value="80000">$80k+</option>
-          <option value="100000">$100k+</option>
-          <option value="120000">$120k+</option>
-          <option value="150000">$150k+</option>
         </select>
         <button className="btn btn-primary" onClick={handleSearch} disabled={isLoading || !query.trim()}>
           {loading ? <span className="spinner" /> : 'Search'}
