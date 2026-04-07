@@ -106,13 +106,13 @@ ${jobList}`
 async function extractSearchQueries(resumeText) {
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
+    max_tokens: 768,
     system: 'Return only valid JSON, no markdown, no backticks.',
     messages: [{
       role: 'user',
-      content: `Based on this resume, generate 4 specific job search queries that would surface the best-fit open roles for this candidate. Vary the seniority and framing slightly across queries. Return ONLY a JSON array of strings:
+      content: `Based on this resume, generate 6 job search queries to surface the best-fit open roles. Mix specific and broader queries: 2 precise role+industry queries, 2 with varied seniority framing, and 2 slightly broader fallbacks that cast a wider net. This ensures a good volume of results. Return ONLY a JSON array of 6 strings:
 
-["query 1", "query 2", "query 3", "query 4"]
+["query 1", "query 2", "query 3", "query 4", "query 5", "query 6"]
 
 Resume:
 ${resumeText.slice(0, 2000)}`

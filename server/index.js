@@ -152,16 +152,17 @@ app.post('/api/smart-search', async (req, res) => {
     // Step 1: Claude reads the resume and produces search queries
     const queries = await extractSearchQueries(resumeText);
 
-    // Step 2: Run each query against JSearch in parallel, collect all results
+    // Step 2: Run each query sequentially to avoid JSearch rate limits
     const seen = new Set();
     const allJobs = [];
 
-    await Promise.all(queries.map(async (q) => {
+    for (const q of queries) {
       try {
         const url = new URL('https://jsearch.p.rapidapi.com/search');
         url.searchParams.set('query', q);
         url.searchParams.set('page', '1');
-        url.searchParams.set('num_pages', '1');
+        url.searchParams.set('num_pages', '2');
+        url.searchParams.set('date_posted', 'month');
 
         const jsRes = await fetch(url.toString(), {
           headers: {
@@ -170,8 +171,10 @@ app.post('/api/smart-search', async (req, res) => {
           },
         });
         const jsData = await jsRes.json();
+        const hits = jsData.data || [];
+        console.log(`Smart search query "${q}": ${hits.length} results`);
 
-        for (const j of (jsData.data || [])) {
+        for (const j of hits) {
           if (!seen.has(j.job_id)) {
             seen.add(j.job_id);
             allJobs.push({
@@ -191,7 +194,9 @@ app.post('/api/smart-search', async (req, res) => {
       } catch (e) {
         console.error(`Smart search query "${q}" failed:`, e.message);
       }
-    }));
+    }
+
+    console.log(`Smart search total unique jobs before scoring: ${allJobs.length}`);
 
     if (!allJobs.length) {
       return res.json({ jobs: [], queries, message: 'No results found across all searches.' });
