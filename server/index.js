@@ -30,6 +30,16 @@ function formatSalary(j) {
   return j.job_min_salary ? `${fmt(j.job_min_salary)}+` : null;
 }
 
+// Helper: filter jobs by minimum salary — jobs with no salary data are kept
+function filterBySalary(jobs, minSalary) {
+  if (!minSalary) return jobs;
+  return jobs.filter(j => {
+    const raw = j._minSalaryRaw;
+    if (raw == null) return true; // no salary data — include rather than exclude
+    return raw >= minSalary;
+  });
+}
+
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -82,7 +92,7 @@ app.get('/api/resume', async (req, res) => {
 // Search real jobs via JSearch (aggregates LinkedIn, Indeed, Glassdoor, Google Jobs)
 app.post('/api/search', async (req, res) => {
   try {
-    const { query, location, level } = req.body;
+    const { query, location, level, minSalary } = req.body;
     if (!query) return res.status(400).json({ error: 'query is required' });
 
     // Build search string
@@ -109,18 +119,21 @@ app.post('/api/search', async (req, res) => {
     }
 
     // Map JSearch fields to our app format
-    const jobs = jsData.data.map(j => ({
+    const rawJobs = jsData.data.map(j => ({
       title: j.job_title,
       company: j.employer_name,
       location: [j.job_city, j.job_state || j.job_country].filter(Boolean).join(', ')
         || (j.job_is_remote ? 'Remote' : 'Location not specified'),
       salary: formatSalary(j),
+      _minSalaryRaw: j.job_min_salary || null,
       url: j.job_apply_link,
       score: null,
       fit_reason: '',
       tags: [j.job_employment_type, j.job_is_remote ? 'Remote' : null].filter(Boolean),
       description: (j.job_description || '').slice(0, 500),
     }));
+
+    const jobs = filterBySalary(rawJobs, minSalary).map(({ _minSalaryRaw, ...j }) => j);
 
     // If resume is uploaded, score all results in one Claude call
     const resumeText = await getResume();
@@ -144,6 +157,7 @@ app.post('/api/search', async (req, res) => {
 // Smart search: resume-driven, no query needed
 app.post('/api/smart-search', async (req, res) => {
   try {
+    const { minSalary } = req.body;
     const resumeText = await getResume();
     if (!resumeText) {
       return res.status(400).json({ error: 'No resume found. Please upload your resume first.' });
@@ -183,6 +197,7 @@ app.post('/api/smart-search', async (req, res) => {
               location: [j.job_city, j.job_state || j.job_country].filter(Boolean).join(', ')
                 || (j.job_is_remote ? 'Remote' : 'Location not specified'),
               salary: formatSalary(j),
+              _minSalaryRaw: j.job_min_salary || null,
               url: j.job_apply_link,
               score: null,
               fit_reason: '',
@@ -198,12 +213,16 @@ app.post('/api/smart-search', async (req, res) => {
 
     console.log(`Smart search total unique jobs before scoring: ${allJobs.length}`);
 
-    if (!allJobs.length) {
-      return res.json({ jobs: [], queries, message: 'No results found across all searches.' });
+    // Apply salary filter (jobs with no salary data pass through)
+    const filtered = filterBySalary(allJobs, minSalary).map(({ _minSalaryRaw, ...j }) => j);
+    console.log(`Smart search after salary filter: ${filtered.length}`);
+
+    if (!filtered.length) {
+      return res.json({ jobs: [], queries, message: 'No results matched your salary filter. Try lowering the minimum or selecting "Any salary".' });
     }
 
     // Step 3: Score everything against the resume in one Claude call
-    const scored = await scoreJobsAgainstResume(allJobs, resumeText);
+    const scored = await scoreJobsAgainstResume(filtered, resumeText);
 
     // Step 4: Sort by score descending
     scored.sort((a, b) => {

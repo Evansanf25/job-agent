@@ -4,6 +4,7 @@ export default function Search({ api, onSave }) {
   const [query, setQuery] = useState('');
   const [location, setLocation] = useState('');
   const [level, setLevel] = useState('');
+  const [minSalary, setMinSalary] = useState('');
   const [loading, setLoading] = useState(false);
   const [smartLoading, setSmartLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -20,7 +21,7 @@ export default function Search({ api, onSave }) {
       const res = await fetch(`${api}/api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, location, level }),
+        body: JSON.stringify({ query, location, level, minSalary: minSalary ? Number(minSalary) : null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
@@ -44,6 +45,7 @@ export default function Search({ api, onSave }) {
       const res = await fetch(`${api}/api/smart-search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minSalary: minSalary ? Number(minSalary) : null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Smart search failed');
@@ -127,14 +129,24 @@ export default function Search({ api, onSave }) {
             Reads your resume, searches automatically, returns the best-matched roles — no typing needed
           </div>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleSmartSearch}
-          disabled={isLoading}
-          style={{ whiteSpace: 'nowrap' }}
-        >
-          {smartLoading ? <><span className="spinner" />&nbsp;Finding matches...</> : 'Find my best matches'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <select value={minSalary} onChange={e => setMinSalary(e.target.value)} style={{ width: 130 }}>
+            <option value="">Any salary</option>
+            <option value="60000">$60k+</option>
+            <option value="80000">$80k+</option>
+            <option value="100000">$100k+</option>
+            <option value="120000">$120k+</option>
+            <option value="150000">$150k+</option>
+          </select>
+          <button
+            className="btn btn-primary"
+            onClick={handleSmartSearch}
+            disabled={isLoading}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            {smartLoading ? <><span className="spinner" />&nbsp;Finding matches...</> : 'Find my best matches'}
+          </button>
+        </div>
       </div>
 
       {/* Divider */}
@@ -168,6 +180,14 @@ export default function Search({ api, onSave }) {
           <option>Director</option>
           <option>VP</option>
           <option>Managing Director</option>
+        </select>
+        <select value={minSalary} onChange={e => setMinSalary(e.target.value)} style={{ width: 130 }}>
+          <option value="">Any salary</option>
+          <option value="60000">$60k+</option>
+          <option value="80000">$80k+</option>
+          <option value="100000">$100k+</option>
+          <option value="120000">$120k+</option>
+          <option value="150000">$150k+</option>
         </select>
         <button className="btn btn-primary" onClick={handleSearch} disabled={isLoading || !query.trim()}>
           {loading ? <span className="spinner" /> : 'Search'}
